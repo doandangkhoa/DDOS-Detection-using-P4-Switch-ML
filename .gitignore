@@ -1,0 +1,57 @@
+# ==========================================
+# 1. DỮ LIỆU NẶNG (TUYỆT ĐỐI KHÔNG PUSH)
+# ==========================================
+# File dataset CIC-DDoS2019 và file lưu lượng mạng (pcap) thường nặng hàng GB. 
+# Github giới hạn file 100MB, push lên sẽ báo lỗi Fatal ngay lập tức.
+*.csv
+*.dat
+*.pcap
+*.pcapng
+traffic_data/
+control_plane/ml_pipeline/dataset/
+
+# ==========================================
+# 2. MÔI TRƯỜNG PYTHON & MACHINE LEARNING
+# ==========================================
+# Bỏ qua các file rác sinh ra khi chạy code Python và thư viện Scikit-learn
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Bỏ qua thư mục môi trường ảo (Virtual Environment)
+venv/
+env/
+.venv/
+
+# Bỏ qua các file model đã train xong (tùy chọn)
+# Nếu file .pkl nhỏ hơn 50MB thì có thể push, nếu lớn hơn thì bỏ comment dòng dưới
+# *.pkl
+# *.joblib
+
+# ==========================================
+# 3. MẶT PHẢNG DỮ LIỆU P4 (DATA PLANE)
+# ==========================================
+# Bỏ qua các file được sinh ra sau khi chạy lệnh biên dịch (p4c)
+data_plane/build/
+*.json
+*.p4i
+
+# Bỏ qua các file log mạng sinh ra từ switch BMv2 và Mininet
+*.log
+*.pcap_dump
+mininet_logs/
+
+# ==========================================
+# 4. HỆ ĐIỀU HÀNH & TRÌNH SOẠN THẢO
+# ==========================================
+# Trên môi trường Ubuntu, các trình soạn thảo (như Vim/Nano) hay tự sinh file tạm
+*~
+*.swp
+*.swo
+
+# Cấu hình riêng của VS Code (không nên bắt người khác dùng chung setting của mình)
+.vscode/
+
+# Biến môi trường bảo mật
+.env
