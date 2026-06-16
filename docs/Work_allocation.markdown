@@ -70,11 +70,15 @@ ddos-p4-rf-project/
 
 ### PHẦN 1: Cấu trúc "Thùng chứa" Báo cáo (Telemetry Header)
 **Yêu cầu:** Thống nhất định dạng Header (Bắt buộc tuân thủ thứ tự và số bit) và chèn ngay sau chuẩn UDP (sử dụng UDP Port 50000 làm cờ hiệu).
-1. `switch_id`: 32-bit (Định danh switch gửi báo cáo).
-2. `tot_pck`: 16-bit (Tổng số gói tin).
-3. `tcp_pck`: 16-bit (Tổng gói TCP).
-4. `udp_pck`: 16-bit (Tổng gói UDP).
-5. `syn_pck`: 16-bit (Tổng gói mang cờ TCP SYN).
+
+header telemetry_report_t {
+    bit<32> switch_id;
+    bit<16> tot_pck;
+    bit<32> tot_bytes; 
+    bit<16> tcp_pck;
+    bit<16> udp_pck;
+    bit<16> syn_pck;
+}
 
 | Phân công nhiệm vụ | Chi tiết công việc |
 | :--- | :--- |
@@ -83,10 +87,6 @@ ddos-p4-rf-project/
 
 ### PHẦN 2: Tập đặc trưng (Feature Set) đưa vào AI
 **Yêu cầu:** Mô hình Random Forest chỉ được phép học dựa trên những gì phần cứng P4 có khả năng đếm được. Tuyệt đối không thêm các đặc trưng tính toán thời gian phức tạp (như IAT).
-1. `tot_pck`
-2. `tcp_pck`
-3. `udp_pck`
-4. `syn_pck`
 
 | Phân công nhiệm vụ | Chi tiết công việc |
 | :--- | :--- |
@@ -102,13 +102,14 @@ ddos-p4-rf-project/
 | **Người làm P4 (Data Plane)** | Viết khối lệnh điều kiện: `if (meta.counter_tot == 10000)`. Khi thỏa mãn, gọi chuỗi hành động: Đọc thanh ghi -> Reset thanh ghi về 0 -> Clone gói tin gửi lên cổng CPU. |
 | **Người làm Python (Control Plane)** | Viết hàm Python theo cơ chế bất đồng bộ (Asynchronous) hoặc dùng đa luồng (Threading) để đảm bảo có thể bắt và xử lý liên tục các gói báo cáo mà không bị rớt mạng. |
 
-### PHẦN 4: Lệnh chặn tấn công (Mitigation API Protocol)
-**Yêu cầu:** Khi AI phát hiện DDoS, nó phải ra lệnh cho P4 chặn ngay lập tức. Hai bên phải khớp tên biến để gọi API (P4Runtime).
-* **Tên Bảng thực thi chặn:** `table_block_malicious_ipv4`
-* **Khóa tra cứu (Match Key):** Dựa vào IP Nguồn (`hdr.ipv4.srcAddr`) kiểu tra cứu Exact (Chính xác 100%).
-* **Hành động (Action):** `action_drop_packet`
+### PHẦN 4: Lệnh Giảm thiểu tấn công & Bảo vệ Nạn nhân (Mitigation & Rate Limiting Protocol)
+**Yêu cầu:** Khi AI phát hiện DDoS, hệ thống KHÔNG chặn IP Nguồn (để chống IP Spoofing và tránh tràn RAM Switch). Thay vào đó, Controller tìm IP Nạn nhân và ra lệnh cho P4 kích hoạt cơ chế **Bóp băng thông (Rate Limit)** dựa trên IP Đích để bảo vệ máy chủ.
+- **Tên Đối tượng Meter:** `meter_syn_flood`
+- **Tên Bảng thực thi:** `table_rate_limit`
+- **Khóa tra cứu (Match Key):** Dựa vào IP Đích (`hdr.ipv4.dstAddr`) kiểu tra cứu Exact (Chính xác 100%).
+- **Hành động (Action):** `action_set_meter_index`
 
 | Phân công nhiệm vụ | Chi tiết công việc |
 | :--- | :--- |
-| **Người làm P4 (Data Plane)** | Khởi tạo bảng `table_block_malicious_ipv4` trống ở giai đoạn đầu của Ingress Pipeline. Nếu gói tin lọt vào bảng này và khớp IP, thực thi lệnh `mark_to_drop()`. |
-| **Người làm Python (Control Plane)** | Trích xuất IP Nguồn từ báo cáo. Nếu Random Forest trả kết quả DDoS (1), gọi API đẩy lệnh `table_add table_block_malicious_ipv4 action_drop_packet [IP_Nguồn]` xuống switch. |
+| **Người làm P4 (Data Plane)** | Khởi tạo bảng `table_rate_limit` và `meter` ở đầu Ingress Pipeline. Nếu gói tin lọt vào bảng này và khớp IP Đích, thực thi lệnh `action_set_meter_index` để đưa vào máy đo. Đọc mã màu từ Meter, nếu vượt ngưỡng (Màu Đỏ), thực thi `mark_to_drop()`. |
+| **Người làm Python (Control Plane)** | Bắt gói tin thực tế (DPI) để truy vết IP Đích. Khi AI báo động, gọi API đẩy 2 lệnh xuống switch:<br> **Lệnh 1:** Cấu hình băng thông `meter_array_set_rates meter_syn_flood ...`<br> **Lệnh 2:** `table_add table_rate_limit action_set_meter_index [IP_NạnNhân] => 1`. |
