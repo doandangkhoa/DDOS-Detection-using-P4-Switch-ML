@@ -1,70 +1,191 @@
 from mininet.net import Mininet
 from mininet.topo import Topo
 from mininet.cli import CLI
-from mininet.link import TCLink  # Thư viện cực kỳ quan trọng để giới hạn băng thông
+from mininet.link import TCLink
 from p4_mininet import P4Switch, P4Host
 import os
 
-class RealisticDDoSTopo(Topo):
+
+class EnterpriseDDoSTopo(Topo):
     def __init__(self, **opts):
-        Topo.__init__(self, **opts)
+        super().__init__(**opts)
 
-        # 1. Khởi tạo P4 Switch (Đóng vai trò là Edge Firewall / Router)
-        # Tắt tính năng pcap_dump mặc định của BMv2 để tránh đầy ổ cứng khi bị DDoS
-        s1 = self.addSwitch('s1', 
-                            sw_path='simple_switch',
-                            json_path='p4_compiled.json', 
-                            thrift_port=9090,
-                            pcap_dump=False) 
+        # ==========================================================
+        # P4 SWITCH
+        # ==========================================================
+        s1 = self.addSwitch(
+            's1',
+            sw_path='simple_switch',
+            json_path='p4_compiled.json',
+            thrift_port=9090,
+            pcap_dump=False
+        )
 
-        # 2. Khởi tạo các Hosts (Tách biệt rõ ràng các Zone)
-        # 🌐 ZONE: EXTERNAL (Internet)
-        h1_user    = self.addHost('h1', ip='10.0.0.1/24', mac='00:00:00:00:00:01') # Người dùng bình thường
-        h2_hacker  = self.addHost('h2', ip='10.0.0.2/24', mac='00:00:00:00:00:02') # Máy chủ Botnet
+        # ==========================================================
+        # EXTERNAL ZONE
+        # ==========================================================
 
-        # 🏢 ZONE: INTERNAL (DMZ / Data Center)
-        h3_server  = self.addHost('h3', ip='10.0.0.3/24', mac='00:00:00:00:00:03') # Server nạn nhân
+        # Legitimate User
+        h1_user = self.addHost(
+            'h1',
+            ip='10.0.0.1/24',
+            mac='00:00:00:00:00:01'
+        )
 
-        # 3. Kéo cáp vật lý (Sử dụng TCLink để giới hạn băng thông thực tế)
-        # Giả lập cáp quang ngoài Internet: Băng thông rộng (100 Mbps), độ trễ 5ms
-        self.addLink(h1_user, s1, port2=1, cls=TCLink, bw=100, delay='5ms')
-        self.addLink(h2_hacker, s1, port2=2, cls=TCLink, bw=100, delay='5ms')
+        # Botnet / Attacker
+        h2_attacker = self.addHost(
+            'h2',
+            ip='10.0.0.2/24',
+            mac='00:00:00:00:00:02'
+        )
 
-        # Giả lập cáp mạng nội bộ vào Server: Băng thông hẹp hơn (10 Mbps), độ trễ 1ms
-        # Nút thắt cổ chai (Bottleneck) nằm ở đây. Khi hacker bơm 100Mbps vào Switch, cổng số 3 sẽ bị nghẽn!
-        self.addLink(h3_server, s1, port2=3, cls=TCLink, bw=10, delay='1ms')
+        # ==========================================================
+        # DMZ ZONE
+        # ==========================================================
+
+        # Victim Server
+        h3_server = self.addHost(
+            'h3',
+            ip='10.0.0.3/24',
+            mac='00:00:00:00:00:03'
+        )
+
+        # ==========================================================
+        # INTERNAL ZONE
+        # ==========================================================
+
+        # Internal Employee Workstation
+        h4_internal = self.addHost(
+            'h4',
+            ip='10.0.0.4/24',
+            mac='00:00:00:00:00:04'
+        )
+
+        # ==========================================================
+        # SOC / MONITORING ZONE
+        # ==========================================================
+
+        # IDS / SOC Sensor
+        h5_soc = self.addHost(
+            'h5',
+            ip='10.0.0.5/24',
+            mac='00:00:00:00:00:05'
+        )
+
+        # ==========================================================
+        # LINK CONFIGURATION
+        # ==========================================================
+
+        # Internet links
+        self.addLink(
+            h1_user,
+            s1,
+            port2=1,
+            cls=TCLink,
+            bw=100,
+            delay='5ms'
+        )
+
+        self.addLink(
+            h2_attacker,
+            s1,
+            port2=2,
+            cls=TCLink,
+            bw=100,
+            delay='5ms'
+        )
+
+        # DMZ Server bottleneck
+        self.addLink(
+            h3_server,
+            s1,
+            port2=3,
+            cls=TCLink,
+            bw=10,
+            delay='1ms'
+        )
+
+        # Internal LAN
+        self.addLink(
+            h4_internal,
+            s1,
+            port2=4,
+            cls=TCLink,
+            bw=20,
+            delay='1ms'
+        )
+
+        # SOC Monitoring LAN
+        self.addLink(
+            h5_soc,
+            s1,
+            port2=5,
+            cls=TCLink,
+            bw=20,
+            delay='1ms'
+        )
 
 
 def disable_ipv6():
-    """Tắt IPv6 trên tất cả các interface để tránh nhiễu dữ liệu Telemetry"""
-    print("[*] Đang tắt IPv6 để làm sạch môi trường mạng...")
-    os.system("sysctl -w net.ipv6.conf.all.disable_ipv6=1 > /dev/null 2>&1")
-    os.system("sysctl -w net.ipv6.conf.default.disable_ipv6=1 > /dev/null 2>&1")
-    os.system("sysctl -w net.ipv6.conf.lo.disable_ipv6=1 > /dev/null 2>&1")
+    """
+    Disable IPv6 to reduce unwanted background traffic.
+    """
+
+    print("[*] Disabling IPv6...")
+
+    cmds = [
+        "sysctl -w net.ipv6.conf.all.disable_ipv6=1",
+        "sysctl -w net.ipv6.conf.default.disable_ipv6=1",
+        "sysctl -w net.ipv6.conf.lo.disable_ipv6=1"
+    ]
+
+    for cmd in cmds:
+        os.system(f"{cmd} > /dev/null 2>&1")
 
 
 if __name__ == '__main__':
-    # Tắt IPv6 trước khi dựng mạng
+
     disable_ipv6()
-    
-    # Khởi tạo Topology
-    topo = RealisticDDoSTopo()
-    
-    # Chạy Mininet với controller mặc định bị vô hiệu hóa (vì P4 tự xử lý Forwarding)
-    net = Mininet(topo=topo, host=P4Host, switch=P4Switch, controller=None)
-    
-    print("\n" + "="*50)
-    print("🚀 KHỞI ĐỘNG MÔI TRƯỜNG MẠNG SDN/P4 THỰC TẾ")
-    print("="*50)
-    print("  [+] Switch P4 s1 đang lắng nghe Thrift CLI tại port 9090")
-    print("  [+] Băng thông h1, h2 (Internet) -> s1 : 100 Mbps")
-    print("  [+] Băng thông s1 -> h3 (DMZ Server)   : 10 Mbps (Bottleneck)")
-    print("="*50 + "\n")
-    
+
+    topo = EnterpriseDDoSTopo()
+
+    net = Mininet(
+        topo=topo,
+        host=P4Host,
+        switch=P4Switch,
+        controller=None
+    )
+
+    print("\n" + "=" * 65)
+    print("🚀 ENTERPRISE SDN/P4 DDoS TESTBED")
+    print("=" * 65)
+    print("Switch:")
+    print("  [+] s1 (BMv2 P4 Switch)")
+    print("  [+] Thrift Port: 9090")
+    print("")
+    print("Hosts:")
+    print("  [+] h1 = Legitimate User")
+    print("  [+] h2 = Botnet Attacker")
+    print("  [+] h3 = Victim Server")
+    print("  [+] h4 = Internal Client")
+    print("  [+] h5 = SOC Sensor")
+    print("")
+    print("Bandwidth:")
+    print("  [+] h1 -> s1 : 100 Mbps")
+    print("  [+] h2 -> s1 : 100 Mbps")
+    print("  [+] h3 -> s1 : 10 Mbps (Bottleneck)")
+    print("  [+] h4 -> s1 : 20 Mbps")
+    print("  [+] h5 -> s1 : 20 Mbps")
+    print("=" * 65 + "\n")
+
     net.start()
-    
-    # Mở giao diện tương tác
+
+    print("[+] Network started successfully.")
+    print("[+] Verify connectivity with: pingall")
+    print("[+] Open terminals:")
+    print("    xterm h1 h2 h3 h4 h5")
+    print("")
+
     CLI(net)
-    
-    # Dọn dẹp sau khi gõ lệnh 'exit'
+
     net.stop()
