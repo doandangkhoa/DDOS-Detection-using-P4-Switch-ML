@@ -15,7 +15,20 @@ label_mapping = {'Benign': 0, 'Syn': 1}
 df_train['Label'] = df_train['Label'].map(label_mapping)
 df_test['Label'] = df_test['Label'].map(label_mapping)
 
-features = ['tot_pck', 'tcp_pck', 'udp_pck', 'syn_pck']
+def extract_features(df):
+    # adding 1e-9 prevent 0 division
+    df['avg_length'] = df['tot_bytes'] / (df['tot_pck'] + 1e-9)
+    df['tcp_ratio'] = df['tcp_pck'] / (df['tot_pck'] + 1e-9)
+    df['udp_ratio'] = df['udp_pck'] / (df['tot_pck'] + 1e-9)
+    df['tcp_udp_ratio'] = df['tcp_pck'] / (df['udp_pck'] + 1e-9)
+    df['syn_ratio'] = df['syn_pck'] / (df['tot_pck'] + 1e-9)
+    return df
+
+print("Feature Engineering...")
+df_train = extract_features(df_train)
+df_test = extract_features(df_test)
+
+features = ['avg_length', 'tcp_ratio', 'udp_ratio', 'tcp_udp_ratio', 'syn_ratio']
 
 X_train = df_train[features]
 y_train = df_train['Label']
@@ -61,5 +74,3 @@ print(df_train['syn_pck'].value_counts())
 model_filename = 'random_forest.pkl'
 joblib.dump(rf_model, model_filename)
 print(f"\nTraining successfully! Saved to: {model_filename}")
-
-print(df_train[features].describe())

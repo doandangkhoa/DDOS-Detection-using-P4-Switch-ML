@@ -28,8 +28,17 @@ benign_udp = np.random.randint(5, 50, NUM_BENIGN)
 benign_tcp = np.maximum(benign_tot - benign_udp, 0)
 benign_syn = (benign_tcp * benign_syn_ratio).astype(int)
 
+# Mạng bình thường có kèm dữ liệu (Payload) nên gói tin khá to (500 - 1200 bytes/gói)
+benign_avg_len = np.random.randint(500, 1200, NUM_BENIGN)
+benign_bytes = benign_tot * benign_avg_len
+
 benign_df = pd.DataFrame({
-    'tot_pck': benign_tot, 'tcp_pck': benign_tcp, 'udp_pck': benign_udp, 'syn_pck': benign_syn, 'Label': 'Benign'
+    'tot_pck': benign_tot, 
+    'tot_bytes': benign_bytes,
+    'tcp_pck': benign_tcp, 
+    'udp_pck': benign_udp, 
+    'syn_pck': benign_syn, 
+    'Label': 'Benign'
 })
 
 print("🚀 Đang tạo tập SYN Flood (Có Botnet ngụy trang)...")
@@ -52,8 +61,17 @@ attack_udp = np.random.randint(0, 20, NUM_ATTACK)
 attack_tcp = np.maximum(attack_tot - attack_udp, 0)
 attack_syn = (attack_tcp * attack_syn_ratio).astype(int)
 
+# Gói tin SYN Flood thường là gói rỗng chỉ chứa Header để tối đa tốc độ (60 - 80 bytes/gói)
+attack_avg_len = np.random.randint(60, 80, NUM_ATTACK)
+attack_bytes = attack_tot * attack_avg_len
+
 attack_df = pd.DataFrame({
-    'tot_pck': attack_tot, 'tcp_pck': attack_tcp, 'udp_pck': attack_udp, 'syn_pck': attack_syn, 'Label': 'Syn'
+    'tot_pck': attack_tot, 
+    'tot_bytes': attack_bytes,
+    'tcp_pck': attack_tcp, 
+    'udp_pck': attack_udp, 
+    'syn_pck': attack_syn, 
+    'Label': 'Syn'
 })
 
 # --- TRỘN VÀ CHIA DATASET ---
