@@ -79,7 +79,7 @@ control MyIngress(inout headers hdr, inout metadata meta, inout standard_metadat
             reg_udp_pck.write(0, t_udp);
             reg_syn_pck.write(0, t_syn);
 
-            if (t_pck >= 1000) { 
+            if (t_pck >= 100) { 
                 meta.tot_pck   = t_pck;
                 meta.tot_bytes = t_bytes;
                 meta.tcp_pck   = t_tcp;

@@ -26,8 +26,8 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
             hdr.udp.srcPort      = 50000;
             hdr.udp.dstPort      = 50000;
             
-            // Độ dài UDP = 8 (header) + 14 (telemetry) = 22 bytes
-            hdr.udp.length       = 22; 
+            // Độ dài UDP = 8 (header) + 16 (telemetry) = 24 bytes
+            hdr.udp.length       = 24; 
             hdr.udp.checksum     = 0;              // Tắt kiểm tra checksum ở tầng UDP
             
             // 2. Điền dữ liệu Telemetry
