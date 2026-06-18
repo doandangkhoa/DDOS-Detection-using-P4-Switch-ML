@@ -23,8 +23,10 @@ sudo apt install -y git
 git clone https://github.com/p4lang/tutorials.git
 cd tutorials/vm-ubuntu-20.04
 
-sudo ./root-bootstrap.sh
-sudo su p4 -c "./user-bootstrap.sh"
+sudo bash root-dev-bootstrap.sh
+cp py3localpath.py ~/
+chmod +x ~/py3localpath.py
+sudo bash user-dev-bootstrap.sh
 ```
 
 Installation time typically ranges between 30 and 45 minutes.
