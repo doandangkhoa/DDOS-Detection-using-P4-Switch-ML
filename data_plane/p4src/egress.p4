@@ -10,11 +10,17 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
 
         // Kiểm tra nếu là gói tin nhân bản (Clone Session 500)
         if (standard_metadata.instance_type == 1) { 
-            
+            // --- VÁ LỖI GÓI TIN FRANKENSTEIN ---
+            // Phải vứt bỏ vỏ TCP gốc để hệ điều hành Linux không bị bối rối
+            hdr.tcp.setInvalid();
+
             // 1. Cấu hình Lớp mạng (UDP Telemetry)
             hdr.ethernet.dstAddr = 0x000000000005; 
             hdr.ipv4.dstAddr     = 0x0a000005;     // 10.0.0.5 (IP của h5)
             hdr.ipv4.protocol    = 17;             // UDP
+
+            // Cập nhật lại tổng chiều dài IP = 20 (IP) + 8 (UDP) + 16 (Telemetry) = 44
+            hdr.ipv4.totalLen    = 44;
 
             hdr.udp.setValid();
             hdr.udp.srcPort      = 50000;
@@ -22,8 +28,7 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
             
             // Độ dài UDP = 8 (header) + 14 (telemetry) = 22 bytes
             hdr.udp.length       = 22; 
-            hdr.udp.checksum     = 0;              // Tắt kiểm tra checksum
-	    hdr.udp.checksum     = (bit<16>)standard_metadata.egress_port + (bit<16>)standard_metadata.ingress_port;
+            hdr.udp.checksum     = 0;              // Tắt kiểm tra checksum ở tầng UDP
             
             // 2. Điền dữ liệu Telemetry
             hdr.telemetry.setValid();
