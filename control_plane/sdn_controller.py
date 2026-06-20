@@ -3,7 +3,6 @@ import threading
 import time
 import os
 import csv
-import socket
 from datetime import datetime
 from collections import Counter
 from scapy.all import sniff, IP, TCP
@@ -22,6 +21,12 @@ ENABLE_LOGGING = False
 # protected state prevent to sending duplicate decision
 protected_servers = set()
 protected_lock = threading.Lock()
+
+# ─── STATE CHIA SẺ: report telemetry mới nhất từ Switch ───
+# Switch đã tự tính victim_ip bằng heavy-hitter sketch ngay trong data-plane,
+# Controller chỉ cần đọc lại giá trị này, không cần tự sniff/DPI nữa.
+latest_report_lock = threading.Lock()
+latest_report = {}
 
 predictor = TrafficPredictor(model_path='ml_pipeline/random_forest.pkl', time_window=1.0, attack_thresh=0.6)
 
@@ -63,33 +68,6 @@ def apply_rate_limit(victim_ip):
     os.system(cmd_table)
     os.system(cmd_meter)
 
-def identify_victim_dpi():
-    """Listening the real packets to trace the victim IP"""
-    print("  Kích hoạt Deep Packet Inspection (DPI)...")
-    print("  [+] Đang bắt 100 gói tin SYN để phân tích chùm tia tấn công...")
-
-    try:
-        # If simulate by P4-Switch (not by scapy_headers emulator) --> remove the attribute iface="lo" 
-        packets = sniff(iface="lo", filter="tcp[tcpflags] & (tcp-syn) != 0", count=50, timeout=3)
-
-        if not packets:
-            print("  [!] Không bắt được gói SYN nào trong mạng.")
-            return None
-
-        # IP extraction
-        dst_ips = [packet[IP].dst for packet in packets if IP in packet]
-
-        if dst_ips:
-            ip_counts = Counter(dst_ips)
-            victim_ip = ip_counts.most_common(1)[0][0]
-
-            print(f"  🎯 TRUY VẾT THÀNH CÔNG: Lưu lượng SYN nhắm vào {victim_ip}!")
-            return victim_ip
-        return None
-    except Exception as e:
-        print(f"  [-] Lỗi trong quá trình DPI: {e}")
-        return None
-
 def window_worker():
     """Luồng chạy ngầm, gọi bộ não ML mỗi giây để hỏi kết quả"""
     while True:
@@ -108,9 +86,15 @@ def window_worker():
         if result['label'] == 'Attack':
             print(f"  🚨 PHÁT HIỆN DẪU HIỆU SYN FLOOD!")
 
-            victim_ip = identify_victim_dpi()
-            if victim_ip:
+            # Đọc victim_ip mà Switch đã tự xác định bằng sketch trong data-plane
+            with latest_report_lock:
+                victim_ip = latest_report.get('victim_ip')
+
+            if victim_ip and victim_ip != "0.0.0.0":
+                print(f"  🎯 NẠN NHÂN (xác định bởi Switch): {victim_ip}")
                 apply_rate_limit(victim_ip)
+            else:
+                print(f"  [!] Chưa có victim_ip hợp lệ trong telemetry, bỏ qua window này.")
 
 
 def start_controller():
@@ -146,14 +130,19 @@ def start_controller():
                     'tcp_pck'  : report.tcp_pck,
                     'udp_pck'  : report.udp_pck,
                     'syn_pck'  : report.syn_pck,
+                    'victim_ip' : report.victim_ip,
                 }
-                
+
+                # ─── LƯU LẠI REPORT MỚI NHẤT cho window_worker đọc ───
+                with latest_report_lock:
+                    latest_report.update(report_dict)
+                    
                 # ─── GHI DATASET NẾU ĐƯỢC BẬT ───
                 if ENABLE_LOGGING:
                     log_to_csv(report_dict, CURRENT_SCENARIO)
                 # ────────────────────────────────
                 
-                # Quăng data sang cho AI
+                # đưa data sang cho AI
                 predictor.add_telemetry(report_dict)
                 
             except Exception:

@@ -43,7 +43,7 @@ header udp_t {
     bit<16> checksum;
 }
 
-// Khớp chính xác định nghĩa cấu trúc Scapy bên phía Controller
+// Phải đồng bộ với sdn controller
 header telemetry_report_t {
     bit<32> switch_id;
     bit<16> tot_pck;
@@ -51,6 +51,7 @@ header telemetry_report_t {
     bit<16> tcp_pck;
     bit<16> udp_pck;
     bit<16> syn_pck;
+    bit<32> victim_ip;
 }
 
 struct headers {
@@ -62,12 +63,19 @@ struct headers {
 }
 
 struct metadata {
+    @field_list(1)
     bit<16> tot_pck;
+    @field_list(1)
     bit<32> tot_bytes;
+    @field_list(1)
     bit<16> tcp_pck;
+    @field_list(1)
     bit<16> udp_pck;
+    @field_list(1)
     bit<16> syn_pck;
-    bit<2> meter_color;
+    @field_list(1)
+    bit<32> victim_ip;
+    bit<2>  meter_color;   // không cần giữ, nên không đánh dấu
 }
 
 #endif

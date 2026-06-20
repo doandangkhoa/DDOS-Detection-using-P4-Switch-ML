@@ -19,15 +19,15 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
             hdr.ipv4.dstAddr     = 0x0a000005;     // 10.0.0.5 (IP của h5)
             hdr.ipv4.protocol    = 17;             // UDP
 
-            // Cập nhật lại tổng chiều dài IP = 20 (IP) + 8 (UDP) + 16 (Telemetry) = 44
-            hdr.ipv4.totalLen    = 44;
+            // Cập nhật lại tổng chiều dài IP = 20 (IP) + 8 (UDP) + 20 (Telemetry) = 44
+            hdr.ipv4.totalLen    = 48;
 
             hdr.udp.setValid();
             hdr.udp.srcPort      = 50000;
             hdr.udp.dstPort      = 50000;
             
-            // Độ dài UDP = 8 (header) + 16 (telemetry) = 24 bytes
-            hdr.udp.length       = 24; 
+            // Độ dài UDP = 8 (header) + 20 (telemetry) = 28 bytes
+            hdr.udp.length       = 28; 
             hdr.udp.checksum     = 0;              // Tắt kiểm tra checksum ở tầng UDP
             
             // 2. Điền dữ liệu Telemetry
@@ -38,6 +38,7 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
             hdr.telemetry.tcp_pck   = meta.tcp_pck;
             hdr.telemetry.udp_pck   = meta.udp_pck;
             hdr.telemetry.syn_pck   = meta.syn_pck;
+            hdr.telemetry.victim_ip = meta.victim_ip;
 
             // 3. ĐỊNH TUYẾN RA PORT 5
             // Đây là cách duy nhất để đẩy gói tin clone ra ngoài switch

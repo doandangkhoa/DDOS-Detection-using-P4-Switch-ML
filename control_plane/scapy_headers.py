@@ -17,7 +17,8 @@ class DDoSReport(Packet):
         IntField("tot_bytes", 0),         # 4 Bytes
         ShortField("tcp_pck", 0),         # 2 Bytes
         ShortField("udp_pck", 0),         # 2 Bytes
-        ShortField("syn_pck", 0)          # 2 Bytes
+        ShortField("syn_pck", 0),         # 2 Bytes
+        IPField("victim_ip", "0.0.0.0")   # 4 bytes
     ]
 
 # Báo cho Scapy biết: Cứ UDP Port 50000 thì ruột bên trong là DDoSReport
