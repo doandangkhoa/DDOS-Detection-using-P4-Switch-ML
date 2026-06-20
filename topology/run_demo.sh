@@ -39,6 +39,7 @@ echo -e "\n🧹 [2/4] CLEANING UP PREVIOUS ENVIRONMENT..."
 
 sudo mn -c >/dev/null 2>&1 || true
 sudo pkill -f simple_switch >/dev/null 2>&1 || true
+sudo pkill -f "simple_switch_CLI" >/dev/null 2>&1 || true
 sudo pkill -f simple_switch_grpc >/dev/null 2>&1 || true
 sudo fuser -k 9090/tcp >/dev/null 2>&1 || true
 
