@@ -25,7 +25,7 @@ protected_lock = threading.Lock()
 latest_report_lock = threading.Lock()
 latest_report = {}
 
-predictor = TrafficPredictor(model_path='ml_pipeline/random_forest.pkl', time_window=2.0, attack_thresh=0.8)
+predictor = TrafficPredictor(model_path='ml_pipeline/random_forest.pkl', time_window=2.0, attack_thresh=0.6)
 
 meter_index_pool_lock = threading.Lock()
 meter_index_pool = list(range(1, 32))
@@ -63,7 +63,17 @@ def log_raw_telemetry(stats, ts):
             stats['syn_pck'], 
             stats['victim_ip']
         ])
-
+def run_switch_cli(command_str):
+    """Chạy 1 lệnh CLI vào simple_switch, xuyên qua namespace gốc bằng nsenter,
+    không dùng echo|pipe qua nhiều lớp shell (tránh lỗi escape ký tự)."""
+    result = subprocess.run(
+        ["nsenter", "-t", "1", "-n", "simple_switch_CLI", "--thrift-port", "9090"],
+        input=command_str,
+        capture_output=True,
+        text=True
+    )
+    return result
+    
 def apply_rate_limit(victim_ip):
     """Push Rate Limiting rule down to P4 Switch, lưu lại handle + idx để gỡ sau."""
     with protected_lock:
@@ -82,23 +92,36 @@ def apply_rate_limit(victim_ip):
 
     print(f"  🛡️ BẢO VỆ MỤC TIÊU: Kích hoạt Rate Limit cho {victim_ip} (meter idx={idx})")
 
-    cmd_table = f"echo 'table_add table_rate_limit action_set_meter_index {victim_ip}/32 => {idx}' | simple_switch_CLI --thrift-port 9090"
-    result = subprocess.run(cmd_table, shell=True, capture_output=True, text=True)
+    cmd_str = f"table_add table_rate_limit action_set_meter_index {victim_ip} => {idx}\n"
+    result =  run_switch_cli(cmd_str)
+
+    if "DUPLICATE_ENTRY" in result.stdout:
+        print(f"  ⚠️  Switch đã có rule cho {victim_ip} từ trước (có thể do controller "
+              f"restart mất state). Dọn rule cũ rồi thử lại...")
+        run_switch_cli("table_clear table_rate_limit\n")
+        result = run_switch_cli(cmd_str)   # thử lại 1 lần sau khi dọn
 
     handle = None
     match = re.search(r"handle\s+(\d+)", result.stdout)
     if match:
         handle = int(match.group(1))
-    else:
-        print("  [!] Không bóc được entry handle từ output CLI — sẽ không gỡ tự động được rule này.")
-        print(f"  [debug] CLI output: {result.stdout.strip()}")
 
-    cmd_meter = f"echo 'meter_array_set_rates meter_syn_flood {idx} 1000 500' | simple_switch_CLI --thrift-port 9090 > /dev/null 2>&1"
-    os.system(cmd_meter)
+    if handle is None:
+        print(f"  ❌ THẤT BẠI: Không thể áp Rate Limit cho {victim_ip} — switch không phản hồi.")
+        print(f"     CLI output: {result.stdout.strip()} {result.stderr.strip()}")
+        # Trả lại idx vào pool vì chưa thực sự dùng
+        with meter_index_pool_lock:
+            meter_index_in_use.pop(victim_ip, None)
+            meter_index_pool.append(idx)
+        return   # KHÔNG lưu vào protected_servers — để lần sau window_worker() gọi lại apply_rate_limit()
+
+    meter_result = run_switch_cli(f"meter_set_rates meter_syn_flood {idx} 0.125:15000 0.25:30000\n")
+    if "Error" in meter_result.stdout:
+        print(f"  ⚠️  Lỗi khi set meter rate: {meter_result.stdout.strip()}")
 
     with protected_lock:
         protected_servers[victim_ip] = handle
-
+    print(f"  ✅ Rate Limit đã áp dụng thành công (handle={handle}).")
 
 def remove_rate_limit(victim_ip):
     with protected_lock:
@@ -116,8 +139,7 @@ def remove_rate_limit(victim_ip):
         return
 
     print(f"  ✅ GỠ BẢO VỆ: {victim_ip} đã sạch, gỡ Rate Limit (handle={handle}).")
-    cmd = f"echo 'table_delete table_rate_limit {handle}' | simple_switch_CLI --thrift-port 9090 > /dev/null 2>&1"
-    os.system(cmd)
+    run_switch_cli(f"table_delete table_rate_limit {handle}\n")
 
 
 def unprotect_all():

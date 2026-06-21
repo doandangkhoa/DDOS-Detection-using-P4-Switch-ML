@@ -334,6 +334,6 @@ def run_scenarios(net):
     h3.cmd('killall -9 iperf > /dev/null 2>&1')
     h3.cmd('killall -9 iperf3 > /dev/null 2>&1')
     h3.cmd("rm -f /tmp/h3_webroot/bigfile.bin")
-    
+
     print("\n✅ [+] Dataset generation completed")
     print(f"✅ [+] Ground truth: {GROUND_TRUTH_FILE}")
