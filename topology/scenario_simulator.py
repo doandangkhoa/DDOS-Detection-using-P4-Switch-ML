@@ -1,6 +1,7 @@
 import time
 import csv
 import os
+import random
 
 # ==========================================================
 # DATASET PATH
@@ -47,15 +48,14 @@ def log_event(label, description, start_ts, end_ts):
 # CLEANUP (SAFE NAMESPACE MODE)
 # ==========================================================
 def restart_victim_servers(h3, h4):
-    """Restart server trên h3 chuẩn mực nhất"""
-    h3.cmd('pkill -9 -f "python3 -m http.server" > /dev/null 2>&1')
-    h3.cmd('pkill -9 -f "iperf" > /dev/null 2>&1')
+    for h in [h3, h4]:
+        h.cmd('pkill -9 -f "python3 -m http.server" > /dev/null 2>&1')
+        h.cmd('pkill -9 -f "iperf" > /dev/null 2>&1')
     time.sleep(0.5)
 
-    # nohup giúp web server Python sống sót sau khi Mininet đóng shell
-    h3.cmd("nohup python3 -m http.server 80 > /tmp/h3_http.log 2>&1 &")
-    
-    # cờ -D ép iperf tự động chạy dưới dạng tiến trình nền (Daemon)
+    h3.cmd("mkdir -p /tmp/h3_webroot")
+    h3.cmd("test -f /tmp/h3_webroot/bigfile.bin || dd if=/dev/zero of=/tmp/h3_webroot/bigfile.bin bs=1M count=100 2>/dev/null")
+    h3.cmd("cd /tmp/h3_webroot && nohup python3 -m http.server 80 > /tmp/h3_http.log 2>&1 &")
     h3.cmd("iperf -s -p 5001 -D")
     h3.cmd("iperf -s -u -p 5002 -D")
 
@@ -66,8 +66,8 @@ def cleanup(h1, h2, h4):
     """
     clients = [h1, h2, h4]
     for h in clients:
-        h.cmd("pkill -9 -f bash > /dev/null 2>&1")
-        h.cmd("pkill -9 -f 'while true' > /dev/null 2>&1")
+        h.cmd("pkill -9 -f '/tmp/.*_curl.sh' > /dev/null 2>&1")
+        h.cmd("pkill -9 -f '/tmp/.*_wget.sh' > /dev/null 2>&1")
         h.cmd("killall -9 ping > /dev/null 2>&1")
         h.cmd("killall -9 hping3 > /dev/null 2>&1")
         h.cmd("killall -9 curl > /dev/null 2>&1")
@@ -75,23 +75,31 @@ def cleanup(h1, h2, h4):
         h.cmd("killall -9 iperf > /dev/null 2>&1")
         h.cmd("killall -9 iperf3 > /dev/null 2>&1")
 
+
+def curl_loop(h, sleep_interval, tag):
+    script_path = f"/tmp/{tag}_curl.sh"
+    h.cmd(f"echo 'while true; do curl -s http://10.0.0.3/ > /dev/null; sleep {sleep_interval}; done' > {script_path}")
+    h.cmd(f"bash {script_path} > /dev/null 2>&1 &")
+
 # ==========================================================
 # BACKGROUND TRAFFIC
+# Random hoá nhịp curl mỗi lần gọi, để các lần chạy khác nhau
+# không tạo ra điểm dữ liệu giống hệt nhau (tránh model học "vẹt"
+# theo đúng 1 vài cụm cố định).
 # ==========================================================
 def start_background_traffic(h1, h2, h4):
-    # 1. Nhịp tim ICMP
-    h1.cmd("ping -i 0.05 10.0.0.3 > /dev/null 2>&1 &")
-    
-    # 2. Ép Mininet tạo file bash script rồi chạy ngầm để né 100% lỗi Syntax
-    h1.cmd("echo 'while true; do curl -s http://10.0.0.3/ > /dev/null; sleep 0.05; done' > /tmp/h1_curl.sh")
-    h1.cmd("bash /tmp/h1_curl.sh > /dev/null 2>&1 &")
+    h1.cmd(f"ping -i {round(random.uniform(0.05, 0.2), 2)} 10.0.0.3 > /dev/null 2>&1 &")
 
-    h2.cmd("echo 'while true; do curl -s http://10.0.0.3/ > /dev/null; sleep 0.1; done' > /tmp/h2_curl.sh")
-    h2.cmd("bash /tmp/h2_curl.sh > /dev/null 2>&1 &")
+    curl_loop(h1, round(random.uniform(0.08, 0.15), 3), "h1_bg")
+    curl_loop(h2, round(random.uniform(0.2, 0.4), 3), "h2_bg")
 
-    h4.cmd("echo 'while true; do iperf -c 10.0.0.3 -p 5001 -t 10; sleep 0.5; done' > /tmp/h4_iperf.sh")
-    h4.cmd("bash /tmp/h4_iperf.sh > /dev/null 2>&1 &")
+    h4.cmd(
+        "iperf -c 10.0.0.3 -p 5001 -t 9999 > /dev/null 2>&1 &"
+    )
 
+    h4.cmd(
+        f"iperf -u -c 10.0.0.3 -p 5002 -b {random.randint(1, 3)}M -t 9999 > /dev/null 2>&1 &"
+    )
 # ==========================================================
 # MAIN SCENARIOS RUNNER
 # ==========================================================
@@ -105,6 +113,12 @@ def run_scenarios(net):
     restart_victim_servers(h3, h4)
     time.sleep(3)
 
+    # ─── scenarios được build LẠI mỗi lần gọi run_scenarios(),
+    # nên mọi random.randint/uniform/choice bên trong các lambda chỉ
+    # được tính tại đúng thời điểm action() chạy -> mỗi lần chạy script
+    # (mỗi lần gọi auto_collect_dataset.py) sẽ cho ra tham số khác nhau,
+    # tránh lặp lại y hệt giữa các lần -> giảm nguy cơ model học theo
+    # đúng vài cụm giá trị cố định (nguyên nhân chính gây overfit trước đó).
     scenarios = [
         # ==================================================
         # 1 NORMAL WEB TRAFFIC
@@ -112,7 +126,7 @@ def run_scenarios(net):
         (
             "Benign",
             "Normal office traffic",
-            120,
+            random.randint(90, 150),
             lambda: start_background_traffic(h1, h2, h4)
         ),
 
@@ -122,7 +136,7 @@ def run_scenarios(net):
         (
             "Benign",
             "Large backup transfer (Heavy TCP)",
-            120,
+            random.randint(90, 150),
             lambda: (
                 start_background_traffic(h1, h2, h4),
                 h1.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
@@ -137,11 +151,11 @@ def run_scenarios(net):
         (
             "Benign",
             "DNS/Video style UDP traffic",
-            120,
+            random.randint(90, 150),
             lambda: (
                 start_background_traffic(h1, h2, h4),
-                h1.cmd("iperf -u -c 10.0.0.3 -p 5002 -b 15M -t 120 > /dev/null 2>&1 &"),
-                h2.cmd("iperf -u -c 10.0.0.3 -p 5002 -b 10M -t 120 > /dev/null 2>&1 &")
+                h1.cmd(f"iperf -u -c 10.0.0.3 -p 5002 -b {random.randint(8, 18)}M -t 120 > /dev/null 2>&1 &"),
+                h2.cmd(f"iperf -u -c 10.0.0.3 -p 5002 -b {random.randint(5, 12)}M -t 120 > /dev/null 2>&1 &")
             )
         ),
 
@@ -151,14 +165,14 @@ def run_scenarios(net):
         (
             "Benign",
             "Flash crowd event with mixed protocols",
-            120,
+            random.randint(60, 100),
             lambda: (
-                h1.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
-                h2.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
-                h4.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
-                h4.cmd("iperf -u -c 10.0.0.3 -p 5002 -b 5M -t 120 > /dev/null 2>&1 &"),
-                h1.cmd("while true; do curl -s http://10.0.0.3 > /dev/null; sleep 0.1; done > /dev/null 2>&1 &"),
-                h2.cmd("while true; do curl -s http://10.0.0.3 > /dev/null; sleep 0.1; done > /dev/null 2>&1 &")
+                h1.cmd("iperf -c 10.0.0.3 -p 5001 -t 100 > /dev/null 2>&1 &"),
+                h2.cmd("iperf -c 10.0.0.3 -p 5001 -t 100 > /dev/null 2>&1 &"),
+                h4.cmd("iperf -c 10.0.0.3 -p 5001 -t 100 > /dev/null 2>&1 &"),
+                h4.cmd(f"iperf -u -c 10.0.0.3 -p 5002 -b {random.randint(3, 7)}M -t 100 > /dev/null 2>&1 &"),
+                curl_loop(h1, round(random.uniform(0.05, 0.15), 3), "h1_flash"),
+                curl_loop(h2, round(random.uniform(0.05, 0.15), 3), "h2_flash"),
             )
         ),
 
@@ -168,23 +182,25 @@ def run_scenarios(net):
         (
             "Attack",
             "Low and slow SYN flood",
-            120,
+            random.randint(90, 150),
             lambda: (
                 start_background_traffic(h1, h2, h4),
-                h2.cmd("hping3 -S -p 80 -i u5000 10.0.0.3 > /dev/null 2>&1 &")
+                h2.cmd(f"hping3 -S -p 80 -i u{random.randint(4000, 8000)} 10.0.0.3 > /dev/null 2>&1 &")
             )
         ),
 
         # ==================================================
         # 6 MEDIUM SYN FLOOD
+        # (đã sửa: thiếu f-string khiến hping3 nhận literal "u{...}"
+        # và không gửi được gói nào — bug nghiêm trọng làm bẩn nhãn Attack)
         # ==================================================
         (
             "Attack",
             "Medium SYN flood",
-            120,
+            random.randint(90, 150),
             lambda: (
                 start_background_traffic(h1, h2, h4),
-                h2.cmd("hping3 -S -p 80 -i u1000 10.0.0.3 > /dev/null 2>&1 &")
+                h2.cmd(f"hping3 -S -p 80 -i u{random.randint(800, 3000)} 10.0.0.3 > /dev/null 2>&1 &")
             )
         ),
 
@@ -194,7 +210,7 @@ def run_scenarios(net):
         (
             "Attack",
             "High rate SYN flood",
-            120,
+            random.randint(60, 100),
             lambda: (
                 start_background_traffic(h1, h2, h4),
                 h2.cmd("hping3 -S -p 80 --flood 10.0.0.3 > /dev/null 2>&1 &")
@@ -207,12 +223,12 @@ def run_scenarios(net):
         (
             "Attack",
             "Flash crowd mixed with SYN flood",
-            120,
+            random.randint(60, 100),
             lambda: (
-                h1.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
-                h4.cmd("iperf -c 10.0.0.3 -p 5001 -t 120 > /dev/null 2>&1 &"),
-                h1.cmd("while true; do curl -s http://10.0.0.3 > /dev/null; sleep 0.1; done > /dev/null 2>&1 &"),
-                h4.cmd("while true; do curl -s http://10.0.0.3 > /dev/null; sleep 0.1; done > /dev/null 2>&1 &"),
+                h1.cmd("iperf -c 10.0.0.3 -p 5001 -t 100 > /dev/null 2>&1 &"),
+                h4.cmd("iperf -c 10.0.0.3 -p 5001 -t 100 > /dev/null 2>&1 &"),
+                curl_loop(h1, round(random.uniform(0.05, 0.15), 3), "h1_flash"),
+                curl_loop(h4, round(random.uniform(0.05, 0.15), 3), "h4_flash"),
                 h2.cmd("hping3 -S -p 80 --flood 10.0.0.3 > /dev/null 2>&1 &")
             )
         ),
@@ -223,21 +239,74 @@ def run_scenarios(net):
         (
             "Attack",
             "Victim switching attack (target h4)",
-            120,
+            random.randint(90, 150),
             lambda: (
                 start_background_traffic(h1, h2, h4),
-                h2.cmd("hping3 -S -p 80 --flood 10.0.0.4 > /dev/null 2>&1 &")
+                h4.cmd("nohup python3 -m http.server 80 > /tmp/h4_http.log 2>&1 &"),
+                h2.cmd(
+                    f"hping3 -S -p 80 {'--flood' if random.random() < 0.5 else f'-i u{random.randint(1000, 5000)}'} "
+                    f"10.0.0.4 > /dev/null 2>&1 &"
+                )
             )
         ),
 
         # ==================================================
-        # 10 ATTACK OFF
+        # 10 DOWNLOAD LARG FILES 
         # ==================================================
         (
             "Benign",
-            "Recovery after attack",
-            120,
-            lambda: start_background_traffic(h1,h2,h4)
+            "Large file download (high TCP volume, very low SYN)",
+            random.randint(90, 150),
+            lambda: (
+                h1.cmd("echo 'while true; do wget -q http://10.0.0.3/bigfile.bin -O /dev/null; sleep 0.5; done' > /tmp/h1_wget.sh"),
+                h1.cmd("bash /tmp/h1_wget.sh > /dev/null 2>&1 &"),
+                h4.cmd("echo 'while true; do wget -q http://10.0.0.3/bigfile.bin -O /dev/null; sleep 0.8; done' > /tmp/h4_wget.sh"),
+                h4.cmd("bash /tmp/h4_wget.sh > /dev/null 2>&1 &"),
+            )
+        ),
+
+        # ==================================================
+        # 11 BENIGN VỚI SYN RATIO CAO BẤT THƯỜNG (Flash crowd cực đoan)
+        # Nhiều client mở RẤT NHIỀU connection ngắn liên tục -> đẩy syn_ratio benign
+        # lên gần vùng "trông giống Attack", buộc model phải dựa vào pattern khác
+        # (ví dụ avg_length, tcp_ratio) thay vì chỉ riêng syn_ratio.
+        # ==================================================
+        (
+            "Benign",
+            "Extreme flash crowd - many short-lived connections",
+            random.randint(60, 100),
+            lambda: (
+                curl_loop(h1, round(random.uniform(0.015, 0.035), 3), "h1_extreme"),
+                curl_loop(h2, round(random.uniform(0.015, 0.035), 3), "h2_extreme"),
+                curl_loop(h4, round(random.uniform(0.02, 0.04), 3), "h4_extreme"),
+            )
+        ),
+
+        # ==================================================
+        # 12 ATTACK RẤT CHẬM, GẦN NGƯỠNG BENIGN (stealth thật sự)
+        # Tốc độ thấp hơn nhiều so với kịch bản 5, để syn_ratio rơi gần vùng benign
+        # ==================================================
+        (
+            "Attack",
+            "Ultra-stealth SYN flood (near-benign rate)",
+            random.randint(90, 150),
+            lambda: (
+                start_background_traffic(h1, h2, h4),
+                h2.cmd(f"hping3 -S -p 80 -i u{random.randint(15000, 30000)} 10.0.0.3 > /dev/null 2>&1 &")
+            )
+        ),
+
+        # ==================================================
+        # 13 ATTACK VỚI TỐC ĐỘ NGẪU NHIÊN (không cố định 1 trong 3 mức cũ)
+        # ==================================================
+        (
+            "Attack",
+            "Randomized-rate SYN flood",
+            random.randint(90, 150),
+            lambda: (
+                start_background_traffic(h1, h2, h4),
+                h2.cmd(f"hping3 -S -p 80 -i u{random.choice([1500, 3000, 6000, 12000])} 10.0.0.3 > /dev/null 2>&1 &")
+            )
         ),
     ]
 
@@ -264,6 +333,7 @@ def run_scenarios(net):
     os.system('pkill -9 -f "python3 -m http.server" > /dev/null 2>&1')
     h3.cmd('killall -9 iperf > /dev/null 2>&1')
     h3.cmd('killall -9 iperf3 > /dev/null 2>&1')
-
+    h3.cmd("rm -f /tmp/h3_webroot/bigfile.bin")
+    
     print("\n✅ [+] Dataset generation completed")
     print(f"✅ [+] Ground truth: {GROUND_TRUTH_FILE}")

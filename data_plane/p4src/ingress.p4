@@ -79,7 +79,7 @@ control MyIngress(inout headers hdr, inout metadata meta, inout standard_metadat
 
             if (hdr.tcp.isValid()) {
                 t_tcp = t_tcp + 1;
-                if ((hdr.tcp.ctrl & 0x02) == 0x02) { 
+                if ((hdr.tcp.ctrl & 0x12) == 0x02) { 
                     t_syn = t_syn + 1;
 
                     // --- Bước 1: băm dstAddr ra index trong bảng sketch ---

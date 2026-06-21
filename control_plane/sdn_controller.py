@@ -13,8 +13,8 @@ from ml_pipeline.predict import TrafficPredictor
 CONTROLLER_IP = '0.0.0.0'
 CONTROLLER_PORT = 50000
 
-DATA_COLLECTION_MODE = True   # True: chỉ log + dự đoán, KHÔNG enforce rate-limit (tránh làm bẩn data)
-ENABLE_LOGGING = True
+DATA_COLLECTION_MODE = False   # True: chỉ log + dự đoán, KHÔNG enforce rate-limit (tránh làm bẩn data)
+ENABLE_LOGGING = False
 
 BENIGN_STREAK_THRESHOLD = 5
 
@@ -153,9 +153,7 @@ def window_worker():
         if ENABLE_LOGGING:
             log_raw_telemetry(stats_to_process, current_ts)
 
-        # 4. Đưa dữ liệu đã gom vào Pipeline AI (Không cần dùng queue rườm rà nữa)
-        # Giả sử predictor của bạn có hàm phân tích trực tiếp một dict
-        # Hoặc nếu nó vẫn dùng hàm analyze_window() cũ, bạn cần sửa lại predict.py một chút
+        # 4. Đưa dữ liệu đã gom vào Pipeline AI
         result = predictor.analyze_single_window(stats_to_process) 
         
         if result is None:

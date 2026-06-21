@@ -15,7 +15,7 @@ for file in all_files:
 master_df = pd.concat(df_list, ignore_index=True)
 
 # Lưu thành file dataset cuối cùng để đưa vào Random Forest
-MASTER_CSV = os.path.join(DATASET_DIR, "Master_Labeled_Dataset.csv")
+MASTER_CSV = os.path.join(DATASET_DIR, "final_dataset.csv")
 master_df.to_csv(MASTER_CSV, index=False)
 
 print(f"✅ Đã gộp thành công {len(all_files)} file.")

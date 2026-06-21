@@ -183,6 +183,11 @@ if __name__ == '__main__':
 
     net.start()
 
+    print("[+] Tắt checksum/segmentation offload trên mọi host (bắt buộc cho BMv2 + TCP)...")
+    for h in net.hosts:
+        h.cmd('ethtool -K eth0 tx off rx off tso off gso off gro off lro off 2>/dev/null')
+    print("✅ Đã tắt offload trên toàn bộ host.")
+
     print("[+] Configuring static ARP entries...")
     net.staticArp()            
     print("[+] Static ARP entries configured.")

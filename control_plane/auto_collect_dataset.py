@@ -252,10 +252,23 @@ def main():
     net = Mininet(topo=topo, host=P4Host, switch=P4Switch, controller=None)
     net.start()
 
+    # ─── TẮT CHECKSUM/SEGMENTATION OFFLOAD TRÊN MỌI HOST ───
+    # Bắt buộc cho BMv2 + veth: kernel mặc định "giả định" có NIC thật để
+    # tính checksum/segment ở tầng phần cứng, nhưng veth không có NIC thật,
+    # simple_switch chỉ đọc raw bytes -> gói TCP/UDP có thể mang checksum/
+    # segment sai nếu không tắt các cờ này. Đã xác nhận qua debug thực tế:
+    # thiếu phần này khiến TCP timeout im lặng và UDP bị switch không
+    # đếm đúng dù traffic đã tới đúng namespace.
     print("[+] Tắt checksum/segmentation offload trên mọi host...")
     for h in net.hosts:
-        h.cmd('ethtool -K eth0 tx off rx off tso off gso off gro off lro off 2>/dev/null')
-    print("✅ Đã tắt offload.")
+        h.cmd(
+            'ethtool -K eth0 '
+            'tx off rx off tso off gso off gro off lro off '
+            'tx-udp-segmentation off tx-udp_tnl-csum-segmentation off '
+            'tx-udp_tnl-segmentation off '
+            '2>/dev/null'
+        )
+    print("✅ Đã tắt offload trên toàn bộ host.")
 
     try:
         wait_for_thrift_port()
@@ -288,7 +301,7 @@ def main():
 
     run_merge_labels()
     save_versioned_dataset()
-    
+
     banner("🎉 HOÀN TẤT TOÀN BỘ PIPELINE THU THẬP DATASET")
     print("Kiểm tra kết quả:")
     print(f"  cat {os.path.join(DATASET_DIR, 'ground_truth.csv')}")
