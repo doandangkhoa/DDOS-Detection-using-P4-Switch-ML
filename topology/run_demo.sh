@@ -94,4 +94,5 @@ echo "================================================================="
 
 sleep 2
 
+cd "$PROJECT_ROOT/topology"  
 sudo -E python3 "$PROJECT_ROOT/topology/network_topo.py"

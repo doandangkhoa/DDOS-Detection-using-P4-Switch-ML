@@ -1,17 +1,14 @@
 import joblib
 import pandas as pd
 import numpy as np
-import time
-import threading
 
 class TrafficPredictor:
-    def __init__(self, model_path='random_forest.pkl', time_window=1.0, attack_thresh=0.8):
+    def __init__(self, model_path='ml_pipeline/random_forest.pkl', time_window=1.0, attack_thresh=0.8):
         self.time_window   = time_window
         self.attack_thresh = attack_thresh
         self.features      = ['avg_length', 'tcp_ratio', 'udp_ratio', 'tcp_udp_ratio', 'syn_ratio']
 
-        self.buffer      = []
-        self.buffer_lock = threading.Lock()
+        # KHÔNG CẦN BUFFER HAY LOCK NỮA VÌ CONTROLLER ĐÃ GOM SẴN
 
         print("[*] Loading model...")
         try:
@@ -21,47 +18,38 @@ class TrafficPredictor:
             print(f"[-] Loading failed: {e}")
             exit(1)
 
-    def add_telemetry(self, report_dict):
-        """Receive time-window P4-Switch report then saved to buffer"""
-        with self.buffer_lock:
-            self.buffer.append({**report_dict, 'timestamp': time.time()})
-
-    def analyze_window(self):
+    def analyze_single_window(self, stats_dict):
         """
-        Analyze the time-window report to decide based-on time frame T
+        Nhận trực tiếp 1 Dictionary chứa TỔNG dữ liệu của 1 giây từ Controller
         """
-        now = time.time()
-
-        with self.buffer_lock:
-            # window stored the reports which have timestamp in the time frame
-            window = [report for report in self.buffer
-                      if now - report['timestamp'] <= self.time_window]
-            self.buffer[:] = window  # override the buffer to delete the outdated data
-
-        if not window:
+        # Nếu không có gói tin nào, bỏ qua
+        if stats_dict.get('tot_pck', 0) == 0:
             return None
 
-        # convert to dataframe
-        df = pd.DataFrame(window)
+        # Chuyển đổi dictionary thành DataFrame (chỉ có đúng 1 dòng)
+        df = pd.DataFrame([stats_dict])
 
-        # FEATURE ENGINEERING
-        df['avg_length'] = df['tot_bytes'] / (df['tot_pck'] + 1e-9)
-        df['tcp_ratio'] = df['tcp_pck'] / (df['tot_pck'] + 1e-9)
-        df['udp_ratio'] = df['udp_pck'] / (df['tot_pck'] + 1e-9)
+        # FEATURE ENGINEERING (Tính toán đặc trưng dựa trên tổng 1 giây)
+        df['avg_length']    = df['tot_bytes'] / (df['tot_pck'] + 1e-9)
+        df['tcp_ratio']     = df['tcp_pck'] / (df['tot_pck'] + 1e-9)
+        df['udp_ratio']     = df['udp_pck'] / (df['tot_pck'] + 1e-9)
         df['tcp_udp_ratio'] = df['tcp_pck'] / (df['udp_pck'] + 1e-9)
-        df['syn_ratio'] = df['syn_pck'] / (df['tot_pck'] + 1e-9)
+        df['syn_ratio']     = df['syn_pck'] / (df['tot_pck'] + 1e-9)
         
         features_df = df[self.features].copy() 
 
-        predictions = self.model.predict(features_df)
-        probas      = self.model.predict_proba(features_df)
+        # DỰ ĐOÁN
+        # Vì chỉ có 1 dòng, ta lấy luôn phần tử [0]
+        prediction = self.model.predict(features_df)[0]
+        probas     = self.model.predict_proba(features_df)[0]
 
-        attack_ratio = float(np.mean(predictions))
-        is_attack    = attack_ratio >= self.attack_thresh
+        # probas[1] là xác suất AI cho rằng đây là Attack
+        prob_attack = float(probas[1])
+        is_attack   = prob_attack >= self.attack_thresh
 
         return {
             'label'        : 'Attack' if is_attack else 'Benign',
-            'attack_ratio' : round(attack_ratio * 100, 2),
-            'avg_p_attack' : round(float(np.mean(probas[:, 1])) * 100, 2),
-            'sample_count' : len(window),
+            'attack_ratio' : round(prob_attack * 100, 2), # Dùng xác suất làm tỷ lệ độc hại
+            'avg_p_attack' : round(prob_attack * 100, 2),
+            'sample_count' : 1, # 1 Window tổng hợp
         }

@@ -124,7 +124,7 @@ control MyIngress(inout headers hdr, inout metadata meta, inout standard_metadat
             reg_udp_pck.write(0, t_udp);
             reg_syn_pck.write(0, t_syn);
 
-            if (t_pck >= 10000) { 
+            if (t_pck >= 100) { 
                 bit<32> v_ip;
                 bit<16> v_cnt;
                 reg_victim_ip.read(v_ip, 0);
