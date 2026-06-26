@@ -337,3 +337,9 @@ def run_scenarios(net):
 
     print("\n✅ [+] Dataset generation completed")
     print(f"✅ [+] Ground truth: {GROUND_TRUTH_FILE}")
+
+    
+# Trên mininet CLI
+mininet> h1 bash -c 'while true; do curl -s http://10.0.0.3/ >/dev/null; sleep $(awk "BEGIN{srand(); print 0.1+rand()*0.3}"); done' &
+mininet> h3 iperf -s -p 5001 &
+mininet> h1 ping -i 0.1 10.0.0.3 &

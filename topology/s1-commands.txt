@@ -1,6 +1,6 @@
 mirroring_add 500 5
-table_add ipv4_lpm set_egress_port 10.0.0.1/32 => 1
-table_add ipv4_lpm set_egress_port 10.0.0.2/32 => 2
+table_add ipv4_lpm set_egress_port 192.168.1.1/32 => 1
+table_add ipv4_lpm set_egress_port 192.168.1.2/32 => 2
 table_add ipv4_lpm set_egress_port 10.0.0.3/32 => 3
 table_add ipv4_lpm set_egress_port 10.0.0.4/32 => 4
 table_add ipv4_lpm set_egress_port 10.0.0.5/32 => 5

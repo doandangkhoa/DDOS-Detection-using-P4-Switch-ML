@@ -12,121 +12,32 @@ P4_JSON_PATH = os.path.join(CURRENT_DIR, 'p4_compiled.json')
 class EnterpriseDDoSTopo(Topo):
     def __init__(self, **opts):
         super().__init__(**opts)
-
-        # ==========================================================
-        # P4 SWITCH
-        # ==========================================================
-        s1 = self.addSwitch(
-            's1',
-            sw_path='simple_switch',
-            json_path=P4_JSON_PATH,
-            thrift_port=9090,
-            pcap_dump=False
-        )
-
-        # ==========================================================
-        # EXTERNAL ZONE
-        # ==========================================================
-
+        # P4 Switch 
+        s1 = self.addSwitch('s1', sw_path='simple_switch',json_path=P4_JSON_PATH, thrift_port=9090, pcap_dump=False)
         # Legitimate User
-        h1_user = self.addHost(
-            'h1',
-            ip='10.0.0.1/24',
-            mac='00:00:00:00:00:01'
-        )
-
+        h1_user = self.addHost('h1',ip='192.168.1.1/24',mac='00:00:00:00:00:01')
         # Botnet / Attacker
-        h2_attacker = self.addHost(
-            'h2',
-            ip='10.0.0.2/24',
-            mac='00:00:00:00:00:02'
-        )
-
-        # ==========================================================
-        # DMZ ZONE
-        # ==========================================================
-
+        h2_attacker = self.addHost('h2', ip='192.168.1.2/24', mac='00:00:00:00:00:02')
         # Victim Server
-        h3_server = self.addHost(
-            'h3',
-            ip='10.0.0.3/24',
-            mac='00:00:00:00:00:03'
-        )
-
-        # ==========================================================
-        # INTERNAL ZONE
-        # ==========================================================
-
+        h3_server = self.addHost('h3', ip='10.0.0.3/24', mac='00:00:00:00:00:03')
         # Internal Employee Workstation
-        h4_internal = self.addHost(
-            'h4',
-            ip='10.0.0.4/24',
-            mac='00:00:00:00:00:04'
-        )
-
-        # ==========================================================
-        # SOC / MONITORING ZONE
-        # ==========================================================
-
+        h4_internal = self.addHost('h4', ip='10.0.0.4/24', mac='00:00:00:00:00:04')
         # IDS / SOC Sensor
-        h5_soc = self.addHost(
-            'h5',
-            ip='10.0.0.5/24',
-            mac='00:00:00:00:00:05'
-        )
-
-        # ==========================================================
-        # LINK CONFIGURATION
-        # ==========================================================
+        h5_soc = self.addHost('h5', ip='10.0.0.5/24', mac='00:00:00:00:00:05')
 
         # Internet links
-        self.addLink(
-            h1_user,
-            s1,
-            port2=1,
-            cls=TCLink,
-            bw=100,
-            delay='5ms'
-        )
+        self.addLink(h1_user,s1,port2=1,cls=TCLink,bw=100,delay='5ms')
 
-        self.addLink(
-            h2_attacker,
-            s1,
-            port2=2,
-            cls=TCLink,
-            bw=100,
-            delay='5ms'
-        )
+        self.addLink(h2_attacker,s1,port2=2,cls=TCLink,bw=100,delay='5ms')
 
         # DMZ Server bottleneck
-        self.addLink(
-            h3_server,
-            s1,
-            port2=3,
-            cls=TCLink,
-            bw=10,
-            delay='1ms'
-        )
+        self.addLink(h3_server,s1,port2=3,cls=TCLink,bw=10,delay='1ms')
 
         # Internal LAN
-        self.addLink(
-            h4_internal,
-            s1,
-            port2=4,
-            cls=TCLink,
-            bw=20,
-            delay='1ms'
-        )
+        self.addLink(h4_internal,s1,port2=4,cls=TCLink,bw=20,delay='1ms')
 
         # SOC Monitoring LAN
-        self.addLink(
-            h5_soc,
-            s1,
-            port2=5,
-            cls=TCLink,
-            bw=20,
-            delay='1ms'
-        )
+        self.addLink(h5_soc,s1,port2=5,cls=TCLink,bw=20,delay='1ms')
 
 
 def disable_ipv6():
@@ -188,10 +99,26 @@ if __name__ == '__main__':
         h.cmd('ethtool -K eth0 tx off rx off tso off gso off gro off lro off 2>/dev/null')
     print("✅ Đã tắt offload trên toàn bộ host.")
 
+    print("[+] Adding cross-subnet static routes...")
+    cross_routes = {
+        'h1': '10.0.0.0/24',
+        'h2': '10.0.0.0/24',
+        'h3': '192.168.1.0/24',
+        'h4': '192.168.1.0/24',
+        'h5': '192.168.1.0/24',
+    }
+    for hname, remote_net in cross_routes.items():
+        h = net.get(hname)
+        out = h.cmd(f'ip route add {remote_net} dev eth0 2>&1')
+        if out.strip():
+            print(f"  [!] {hname}: {out.strip()}")
+    print("✅ Cross-subnet routes added.")
+
+
     print("[+] Configuring static ARP entries...")
     net.staticArp()            
     print("[+] Static ARP entries configured.")
-
+    
     print("[+] Network started successfully.")
     print("[+] Verify connectivity with: pingall")
     print("[+] Open terminals:")

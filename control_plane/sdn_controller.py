@@ -25,7 +25,7 @@ protected_lock = threading.Lock()
 latest_report_lock = threading.Lock()
 latest_report = {}
 
-predictor = TrafficPredictor(model_path='ml_pipeline/random_forest.pkl', time_window=2.0, attack_thresh=0.6)
+predictor = TrafficPredictor(model_path='ml_pipeline/random_forest.pkl', time_window=2.0, attack_thresh=0.7)
 
 meter_index_pool_lock = threading.Lock()
 meter_index_pool = list(range(1, 32))
